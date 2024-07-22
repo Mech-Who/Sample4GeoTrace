@@ -14,7 +14,7 @@ from sample4geo.dataset.cvogl import CVOGLDatasetEval, CVOGLDatasetTrain
 from sample4geo.transforms import get_transforms_train, get_transforms_val
 from sample4geo.utils import setup_system, Logger
 from sample4geo.trainer import train
-from sample4geo.evaluate.cvogl import evaluate
+from sample4geo.evaluate.cvogl import evaluate, calc_sim
 from sample4geo.loss import InfoNCE, InfoNCESimilarityLoss
 from sample4geo.model import TimmModel
 from torchvision.transforms import Compose, ToTensor, Normalize
@@ -204,31 +204,31 @@ if __name__ == '__main__':
                                                                mean=mean,
                                                                std=std)
     # Reference Satellite Images
-    reference_dataset = CVOGLDatasetEval(data_folder=config.data_folder,
+    reference_dataset_test = CVOGLDatasetEval(data_folder=config.data_folder,
                                     data_name=config.data_name,
                                     split="val",
                                     img_type="reference",
-                                    transforms=(sat_transforms_val, ground_transforms_val))
-    reference_dataset = DataLoader(val_dataset,
+                                    transforms=sat_transforms_val)
+    reference_dataloader_test = DataLoader(reference_dataset_test,
                                 batch_size=config.batch_size_eval,
                                 num_workers=config.num_workers,
                                 shuffle=False,
                                 pin_memory=True)
 
     # Query Ground Images Test
-    query_dataset = CVOGLDatasetEval(data_folder=config.data_folder,
+    query_dataset_test = CVOGLDatasetEval(data_folder=config.data_folder,
                                     data_name=config.data_name,
                                     split="val",
                                     img_type="query",    
-                                    transforms=(sat_transforms_val, ground_transforms_val))
-    query_dataset = DataLoader(test_dataset,
+                                    transforms=ground_transforms_val)
+    query_dataloader_test = DataLoader(query_dataset_test,
                                 batch_size=config.batch_size_eval,
                                 num_workers=config.num_workers,
                                 shuffle=False,
                                 pin_memory=True)
 
-    print("Images Val:", len(val_dataset))
-    print("Images Test:", len(test_dataset))
+    print("Images Val:", len(reference_dataset_test))
+    print("Images Test:", len(query_dataset_test))
 
     #-----------------------------------------------------------------------------#
     # GPS Sample                                                                  #
@@ -251,7 +251,7 @@ if __name__ == '__main__':
                                                data_name=config.data_name,
                                                split="train",
                                                img_type="query",   
-                                               transforms=(sat_transforms_val, ground_transforms_val))
+                                               transforms=ground_transforms_val)
         query_dataloader_train = DataLoader(query_dataset_train,
                                             batch_size=config.batch_size_eval,
                                             num_workers=config.num_workers,
@@ -261,7 +261,7 @@ if __name__ == '__main__':
                                                    data_name=config.data_name,
                                                    split="train",
                                                    img_type="reference", 
-                                                   transforms=(sat_transforms_val, ground_transforms_val))
+                                                   transforms=sat_transforms_val)
         reference_dataloader_train = DataLoader(reference_dataset_train,
                                                 batch_size=config.batch_size_eval,
                                                 num_workers=config.num_workers,
@@ -313,7 +313,7 @@ if __name__ == '__main__':
 
     train_steps = len(train_dataloader) * config.epochs
     warmup_steps = len(train_dataloader) * config.warmup_epochs
-       
+
     if config.scheduler == "polynomial":
         print("\nScheduler: polynomial - max LR: {} - end LR: {}".format(config.lr, config.lr_end))  
         scheduler = get_polynomial_decay_schedule_with_warmup(optimizer,
@@ -321,29 +321,45 @@ if __name__ == '__main__':
                                                               lr_end = config.lr_end,
                                                               power=1.5,
                                                               num_warmup_steps=warmup_steps)
-        
     elif config.scheduler == "cosine":
         print("\nScheduler: cosine - max LR: {}".format(config.lr))   
         scheduler = get_cosine_schedule_with_warmup(optimizer,
                                                     num_training_steps=train_steps,
                                                     num_warmup_steps=warmup_steps)
-        
     elif config.scheduler == "constant":
         print("\nScheduler: constant - max LR: {}".format(config.lr))   
         scheduler =  get_constant_schedule_with_warmup(optimizer,
                                                        num_warmup_steps=warmup_steps)
-           
     else:
         scheduler = None
         
     print("Warmup Epochs: {} - Warmup Steps: {}".format(str(config.warmup_epochs).ljust(2), warmup_steps))
     print("Train Epochs:  {} - Train Steps:  {}".format(config.epochs, train_steps))
-        
-        
+
     #-----------------------------------------------------------------------------#
     # Zero Shot                                                                   #
     #-----------------------------------------------------------------------------#
 
+    if config.zero_shot:
+        print("\n{}[{}]{}".format(30*"-", "Zero Shot", 30*"-"))  
+
+      
+        r1_test = evaluate(config=config,
+                           model=model,
+                           reference_dataloader=reference_dataloader_test,
+                           query_dataloader=query_dataloader_test, 
+                           ranks=[1, 5, 10],
+                           step_size=1000,
+                           cleanup=True)
+        
+        if config.sim_sample:
+            r1_train, sim_dict = calc_sim(config=config,
+                                          model=model,
+                                          reference_dataloader=reference_dataloader_train,
+                                          query_dataloader=query_dataloader_train, 
+                                          ranks=[1, 5, 10],
+                                          step_size=1000,
+                                          cleanup=True)
                 
     #-----------------------------------------------------------------------------#
     # Shuffle                                                                     #
@@ -383,8 +399,7 @@ if __name__ == '__main__':
         
             r1_test = evaluate(config=config,
                                model=model,
-                               dataloader=val_dataloader,
-                            )
+                               dataloader=query_dataloader_test)
             
             print(f"accu@0.5={r1_test[0]}, accu@0.25={r1_test[1]}")
             

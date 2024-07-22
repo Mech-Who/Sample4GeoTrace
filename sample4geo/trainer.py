@@ -153,6 +153,9 @@ def train(train_config, model, dataloader, loss_function, optimizer, scheduler=N
 
 
 def predict(train_config, model, dataloader):
+    """
+    TODO: 修改了数据集，还没有修改 predict 的流程
+    """
     
     model.eval()
     

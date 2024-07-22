@@ -140,53 +140,30 @@ def calculate_scores(query_features, reference_features, query_labels, reference
     
 
 def calculate_nearest(query_features, reference_features, query_labels, reference_labels, neighbour_range=64, step_size=1000):
-
-
     Q = len(query_features)
-    
     steps = Q // step_size + 1
-    
     similarity = []
-    
     for i in range(steps):
-        
         start = step_size * i
-        
         end = start + step_size
-          
         sim_tmp = query_features[start:end] @ reference_features.T
-        
         similarity.append(sim_tmp.cpu())
-     
     # matrix Q x R
     similarity = torch.cat(similarity, dim=0)
-
     topk_scores, topk_ids = torch.topk(similarity, k=neighbour_range+1, dim=1)
 
     topk_references = []
-    
     for i in range(len(topk_ids)):
         topk_references.append(reference_labels[topk_ids[i,:]])
-    
     topk_references = torch.stack(topk_references, dim=0)
 
-     
     # mask for ids without gt hits
     mask = topk_references != query_labels.unsqueeze(1)
-    
-    
     topk_references = topk_references.cpu().numpy()
     mask = mask.cpu().numpy()
-    
-
     # dict that only stores ids where similiarity higher than the lowes gt hit score
     nearest_dict = dict()
-    
     for i in range(len(topk_references)):
-        
         nearest = topk_references[i][mask[i]][:neighbour_range]
-    
         nearest_dict[query_labels[i].item()] = list(nearest)
-    
-
     return nearest_dict
