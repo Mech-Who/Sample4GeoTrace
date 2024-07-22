@@ -179,65 +179,46 @@ if __name__ == '__main__':
                                                                    mean=mean,
                                                                    std=std,
                                                                    )
-                                                                   
-                                                                   
     # Train
     train_dataset = CVUSADatasetTrain(data_folder=config.data_folder ,
                                       transforms_query=ground_transforms_train,
                                       transforms_reference=sat_transforms_train,
                                       prob_flip=config.prob_flip,
                                       prob_rotate=config.prob_rotate,
-                                      shuffle_batch_size=config.batch_size
-                                      )
-    
-    
+                                      shuffle_batch_size=config.batch_size)
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=config.batch_size,
                                   num_workers=config.num_workers,
                                   shuffle=not config.custom_sampling,
                                   pin_memory=True)
-    
-    
     # Eval
     sat_transforms_val, ground_transforms_val = get_transforms_val(image_size_sat,
                                                                img_size_ground,
                                                                mean=mean,
-                                                               std=std,
-                                                               )
-
-
+                                                               std=std)
     # Reference Satellite Images
     reference_dataset_test = CVUSADatasetEval(data_folder=config.data_folder ,
                                               split="test",
                                               img_type="reference",
-                                              transforms=sat_transforms_val,
-                                              )
-    
+                                              transforms=sat_transforms_val)
     reference_dataloader_test = DataLoader(reference_dataset_test,
                                            batch_size=config.batch_size_eval,
                                            num_workers=config.num_workers,
                                            shuffle=False,
                                            pin_memory=True)
-    
-    
-    
     # Query Ground Images Test
     query_dataset_test = CVUSADatasetEval(data_folder=config.data_folder ,
                                           split="test",
                                           img_type="query",    
-                                          transforms=ground_transforms_val,
-                                          )
-    
+                                          transforms=ground_transforms_val)
     query_dataloader_test = DataLoader(query_dataset_test,
                                        batch_size=config.batch_size_eval,
                                        num_workers=config.num_workers,
                                        shuffle=False,
                                        pin_memory=True)
     
-    
     print("Reference Images Test:", len(reference_dataset_test))
     print("Query Images Test:", len(query_dataset_test))
-    
     
     #-----------------------------------------------------------------------------#
     # GPS Sample                                                                  #
@@ -259,33 +240,25 @@ if __name__ == '__main__':
         query_dataset_train = CVUSADatasetEval(data_folder=config.data_folder ,
                                                split="train",
                                                img_type="query",   
-                                               transforms=ground_transforms_val,
-                                               )
-            
+                                               transforms=ground_transforms_val)
         query_dataloader_train = DataLoader(query_dataset_train,
                                             batch_size=config.batch_size_eval,
                                             num_workers=config.num_workers,
                                             shuffle=False,
                                             pin_memory=True)
-        
-        
         reference_dataset_train = CVUSADatasetEval(data_folder=config.data_folder ,
                                                    split="train",
                                                    img_type="reference", 
-                                                   transforms=sat_transforms_val,
-                                                   )
-        
+                                                   transforms=sat_transforms_val)
         reference_dataloader_train = DataLoader(reference_dataset_train,
                                                 batch_size=config.batch_size_eval,
                                                 num_workers=config.num_workers,
                                                 shuffle=False,
                                                 pin_memory=True)
 
-
         print("\nReference Images Train:", len(reference_dataset_train))
         print("Query Images Train:", len(query_dataset_train))        
 
-    
     #-----------------------------------------------------------------------------#
     # Loss                                                                        #
     #-----------------------------------------------------------------------------#
@@ -293,8 +266,7 @@ if __name__ == '__main__':
     # loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
     loss_fn = torch.nn.CrossEntropyLoss()
     loss_function = InfoNCE(loss_function=loss_fn,
-                            device=config.device,
-                            )
+                            device=config.device)
 
     if config.mixed_precision:
         scaler = GradScaler(init_scale=2.**10)

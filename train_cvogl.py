@@ -36,9 +36,9 @@ class Configuration:
     mixed_precision: bool = True
     seed = 42
     epochs: int = 40
-    batch_size: int = 32        # keep in mind real_batch_size = 2 * batch_size
+    batch_size: int = 4        # keep in mind real_batch_size = 2 * batch_size
     verbose: bool = True
-    gpu_ids: tuple = (0,1)   # GPU ids for training
+    gpu_ids: tuple = ()   # GPU ids for training
     
     
     # Similarity Sampling
@@ -183,10 +183,7 @@ if __name__ == '__main__':
     sat_transforms_train, ground_transforms_train = get_transforms_train(image_size_sat,
                                                                    img_size_ground,
                                                                    mean=mean,
-                                                                   std=std,
-                                                                   )
-                                                                   
-                                                                   
+                                                                   std=std)
     # Train
     train_dataset = CVOGLDatasetTrain(data_folder=config.data_folder,
                                       data_name=config.data_name,
@@ -196,58 +193,42 @@ if __name__ == '__main__':
                                       prob_rotate=config.prob_rotate,
                                       shuffle_batch_size=config.batch_size
                                       )
-
-    
-    
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=config.batch_size,
                                   num_workers=config.num_workers,
                                   shuffle=not config.custom_sampling,
                                   pin_memory=True)
-    
-    
     # Eval
     sat_transforms_val, ground_transforms_val = get_transforms_val(image_size_sat,
                                                                img_size_ground,
                                                                mean=mean,
-                                                               std=std,
-                                                               )
-
-
+                                                               std=std)
     # Reference Satellite Images
-    val_dataset = CVOGLDatasetEval(data_folder=config.data_folder,
+    reference_dataset = CVOGLDatasetEval(data_folder=config.data_folder,
                                     data_name=config.data_name,
                                     split="val",
                                     img_type="reference",
-                                    transforms=(sat_transforms_val,ground_transforms_val)
-                                    )
-    
-    val_dataloader = DataLoader(val_dataset,
-                                batch_size=config.batch_size_eval,
-                                num_workers=config.num_workers,
-                                shuffle=False,
-                                pin_memory=True)
-    
-    
-    
-    # Query Ground Images Test
-    test_dataset = CVOGLDatasetEval(data_folder=config.data_folder,
-                                    data_name=config.data_name,
-                                    split="test",
-                                    img_type="query",    
-                                    transforms=(sat_transforms_val,ground_transforms_val)
-                                    )
-    
-    test_dataloader = DataLoader(test_dataset,
+                                    transforms=(sat_transforms_val, ground_transforms_val))
+    reference_dataset = DataLoader(val_dataset,
                                 batch_size=config.batch_size_eval,
                                 num_workers=config.num_workers,
                                 shuffle=False,
                                 pin_memory=True)
 
-    
+    # Query Ground Images Test
+    query_dataset = CVOGLDatasetEval(data_folder=config.data_folder,
+                                    data_name=config.data_name,
+                                    split="val",
+                                    img_type="query",    
+                                    transforms=(sat_transforms_val, ground_transforms_val))
+    query_dataset = DataLoader(test_dataset,
+                                batch_size=config.batch_size_eval,
+                                num_workers=config.num_workers,
+                                shuffle=False,
+                                pin_memory=True)
+
     print("Images Val:", len(val_dataset))
     print("Images Test:", len(test_dataset))
-
 
     #-----------------------------------------------------------------------------#
     # GPS Sample                                                                  #
@@ -258,7 +239,6 @@ if __name__ == '__main__':
             sim_dict = pickle.load(f)
     else:
         sim_dict = None
-
 
     #-----------------------------------------------------------------------------#
     # Sim Sample                                                                  #
@@ -271,29 +251,22 @@ if __name__ == '__main__':
                                                data_name=config.data_name,
                                                split="train",
                                                img_type="query",   
-                                               transforms=ground_transforms_val,
-                                               )
-            
+                                               transforms=(sat_transforms_val, ground_transforms_val))
         query_dataloader_train = DataLoader(query_dataset_train,
                                             batch_size=config.batch_size_eval,
                                             num_workers=config.num_workers,
                                             shuffle=False,
                                             pin_memory=True)
-        
-        
         reference_dataset_train = CVOGLDatasetEval(data_folder=config.data_folder,
                                                    data_name=config.data_name,
                                                    split="train",
                                                    img_type="reference", 
-                                                   transforms=sat_transforms_val,
-                                                   )
-        
+                                                   transforms=(sat_transforms_val, ground_transforms_val))
         reference_dataloader_train = DataLoader(reference_dataset_train,
                                                 batch_size=config.batch_size_eval,
                                                 num_workers=config.num_workers,
                                                 shuffle=False,
                                                 pin_memory=True)
-
 
         print("\nReference Images Train:", len(reference_dataset_train))
         print("Query Images Train:", len(query_dataset_train))        
@@ -305,8 +278,7 @@ if __name__ == '__main__':
 
     loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
     loss_function = InfoNCESimilarityLoss(loss_function=loss_fn,
-                                           device=config.device,
-                                        )
+                                           device=config.device)
 
     if config.mixed_precision:
         scaler = GradScaler(init_scale=2.**10)
