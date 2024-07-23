@@ -263,8 +263,7 @@ if __name__ == '__main__':
     # Loss                                                                        #
     #-----------------------------------------------------------------------------#
 
-    # loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
-    loss_fn = torch.nn.CrossEntropyLoss()
+    loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
     loss_function = InfoNCE(loss_function=loss_fn,
                             device=config.device)
 

@@ -1,7 +1,7 @@
 import time
 import torch
 from tqdm import tqdm
-from .utils import AverageMeter, xyxy2xywh
+from .utils import AverageMeter
 from torch.cuda.amp import autocast
 import torch.nn.functional as F
 
@@ -26,7 +26,7 @@ def train(train_config, model, dataloader, loss_function, optimizer, scheduler=N
         bar = dataloader
     
     # for loop over one epoch
-    for query, reference, ids, click_xy, gt_box in bar:
+    for query, reference, ids in bar:
         
         if scaler:
             with autocast():
@@ -34,37 +34,13 @@ def train(train_config, model, dataloader, loss_function, optimizer, scheduler=N
                 # data (batches) to device   
                 query = query.to(train_config.device)
                 reference = reference.to(train_config.device)
-                gt_box = torch.clamp(gt_box, min=0, max=train_config.img_size-1).to(train_config.device)
             
                 # Forward pass
                 features1, features2 = model(query, reference)
-                # print(f"{features1.shape=}")
-                # print(f"{features2.shape=}")
-
-                scale1 = train_config.grd_size / features1.shape[2]
-                scale2 = train_config.img_size / features2.shape[2]
-                click_points = click_xy.clone().detach()
-                click_points = click_points.to(train_config.device)
-                # click_points = click_points // scale1
-                click_points[:,0] = torch.div(click_points[:,0], scale1, rounding_mode='floor').long()
-                click_points[:,1] = torch.div(click_points[:,1], scale1, rounding_mode='floor').long()
-
-                # to xyxy2xywh
-                gt_box = xyxy2xywh(gt_box)
-                gt_box = gt_box / scale2
-                gt_points = gt_box[:, 0:2].long()
-                # print(f"{gt_points=}")
-
-                patch_size = int(train_config.patch_size // scale2)
-                # print(f"{patch_size=}")
-
                 if torch.cuda.device_count() > 1 and len(train_config.gpu_ids) > 1: 
-                    # loss = loss_function(features1, features2, model.module.logit_scale.exp())
-                    loss = loss_function(features1, features2, model.module.logit_scale.exp(), patch_size, click_points, gt_points)
+                    loss = loss_function(features1, features2, model.module.logit_scale.exp())
                 else:
-                    # loss = loss_function(features1, features2, model.logit_scale.exp()) 
-                    loss = loss_function(features1, features2, model.logit_scale.exp(), patch_size, click_points, gt_points)
-
+                    loss = loss_function(features1, features2, model.logit_scale.exp()) 
                 losses.update(loss.item())
                 
                   
@@ -91,31 +67,13 @@ def train(train_config, model, dataloader, loss_function, optimizer, scheduler=N
             # data (batches) to device   
             query = query.to(train_config.device)
             reference = reference.to(train_config.device)
-            gt_box = torch.clamp(gt_box, min=0, max=train_config.img_size-1).to(train_config.device)
 
             # Forward pass
             features1, features2 = model(query, reference)
-
-            scale1 = train_config.grd_size / features1.shape[2]
-            scale2 = train_config.img_size / features2.shape[2]
-            click_points = torch.tensor(click_xy, device=train_config.device)
-            click_points = click_points // scale1
-
-            # to xyxy2xywh
-            gt_box = xyxy2xywh(gt_box)
-            gt_box = gt_box / scale2
-            gt_points = gt_box[:, 0:2].long()
-            # print(f"{gt_points=}")
-
-            patch_size = int(train_config.patch_size // scale2)
-            # print(f"{patch_size=}")
-
             if torch.cuda.device_count() > 1 and len(train_config.gpu_ids) > 1: 
-                # loss = loss_function(features1, features2, model.module.logit_scale.exp())
-                loss = loss_function(features1, features2, model.module.logit_scale.exp(), patch_size, click_points, gt_points)
+                loss = loss_function(features1, features2, model.module.logit_scale.exp())
             else:
-                # loss = loss_function(features1, features2, model.logit_scale.exp()) 
-                loss = loss_function(features1, features2, model.logit_scale.exp(), patch_size, click_points, gt_points)
+                loss = loss_function(features1, features2, model.logit_scale.exp()) 
             losses.update(loss.item())
 
             # Calculate gradient using backward pass
@@ -153,9 +111,6 @@ def train(train_config, model, dataloader, loss_function, optimizer, scheduler=N
 
 
 def predict(train_config, model, dataloader):
-    """
-    TODO: 修改了数据集，还没有修改 predict 的流程
-    """
     
     model.eval()
     
@@ -167,54 +122,32 @@ def predict(train_config, model, dataloader):
     else:
         bar = dataloader
         
-    query_features_list = []
-    ref_features_list = []
-    click_xy_list = []
-    gt_box_list = []
-    # scale1 = 0
-    # scale2 = 0
+    img_features_list = []
     
     ids_list = []
     with torch.no_grad():
         
-        for query, reference, ids, click_xy, gt_box in bar:
+        for img, ids in bar:
         
             ids_list.append(ids)
             
             with autocast():
          
-                # data (batches) to device   
-                query = query.to(train_config.device)
-                reference = reference.to(train_config.device)
-                click_points = click_xy.clone().detach()
-                click_points = click_points.to(train_config.device)
-                gt_box = torch.clamp(gt_box, min=0, max=train_config.img_size-1).to(train_config.device)
-            
-                # Forward pass
-                features1, features2 = model(query, reference)
-
-                scale1 = train_config.grd_size / features1.shape[2]
-                scale2 = train_config.img_size / features2.shape[2]
+                img = img.to(train_config.device)
+                img_feature = model(img)
             
                 # normalize is calculated in fp32
                 if train_config.normalize_features:
-                    features1 = F.normalize(features1, dim=-1)
-                    features2 = F.normalize(features2, dim=-1)
+                    img_feature = F.normalize(img_feature, dim=-1)
             
             # save features in fp32 for sim calculation
-            query_features_list.append(features1.to(torch.float32))
-            ref_features_list.append(features2.to(torch.float32))
-            click_xy_list.append(click_points.to(torch.float32))
-            gt_box_list.append(gt_box.to(torch.float32))
+            img_features_list.append(img_feature.to(torch.float32))
       
         # keep Features on GPU
-        query_features = torch.cat(query_features_list, dim=0) 
-        ref_features = torch.cat(ref_features_list, dim=0) 
-        click_xy = torch.cat(click_xy_list, dim=0) 
-        gt_box = torch.cat(gt_box_list, dim=0) 
-
+        img_features = torch.cat(img_features_list, dim=0) 
+        ids_list = torch.cat(ids_list, dim=0).to(train_config.device)
         
     if train_config.verbose:
         bar.close()
         
-    return query_features, ref_features, scale1, scale2, click_xy, gt_box 
+    return img_features, ids_list

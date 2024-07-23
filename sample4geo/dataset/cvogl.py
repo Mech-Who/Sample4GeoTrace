@@ -7,7 +7,7 @@ import random
 import copy
 from tqdm import tqdm
 import time
-import albumentations
+
  
 
 class CVOGLDatasetTrain(Dataset):
@@ -56,9 +56,7 @@ class CVOGLDatasetTrain(Dataset):
         reference_img = cv2.imread(os.path.join(self.data_folder, self.data_name, 'satellite', sat))
         reference_img = cv2.cvtColor(reference_img, cv2.COLOR_BGR2RGB)
 
-        # TODO: 为什么这里要缩放？
-        scale_factor = 512.0/1024.0
-        gt_box = [item * scale_factor for item in gt_box]
+        click_xy = np.array(click_xy, dtype=int)
 
         # Flip simultaneously query and reference
         if np.random.random() < self.prob_flip:
@@ -88,7 +86,8 @@ class CVOGLDatasetTrain(Dataset):
 
         label = torch.tensor(idx, dtype=torch.long)
 
-        return query_img, reference_img, label, np.array(click_xy, dtype=float), np.array(gt_box, dtype=float)
+        # TODO：是否需要返回 click_xy 和 gt_box 这两个？
+        return query_img, reference_img, label
 
     def __len__(self):
         return len(self.samples)
@@ -211,46 +210,59 @@ class CVOGLDatasetEval(Dataset):
 
         if split == 'train':
             self.pth_file = f'{data_folder}/{data_name}/{data_name}_train.pth'
-        elif split == 'val':
-            self.pth_file = f'{data_folder}/{data_name}/{data_name}_val.pth'
         else:
             self.pth_file = f'{data_folder}/{data_name}/{data_name}_test.pth'
 
         self.data_list = torch.load(self.pth_file)
 
-    def __getitem__(self, index):
-        idx, ground, sat, _, click_xy, gt_box, _, _ = self.data_list[index]
+        self.idx2sat = {}
+        self.idx2ground = {}
+        self.click_xy = []
+        self._load_data()
 
-        img_path = None
-        transform = None
+        
+
+    def _load_data(self):
+        for data in self.data_list:
+            idx = data[0]
+            ground_image = data[1]
+            sat_image = data[2]
+            self.click_xy.append(data[4])
+            self.idx2sat[idx] = sat_image
+            self.idx2ground[idx] = ground_image
+
         if self.img_type == "reference":
-            img_path = os.path.join(self.data_folder, self.data_name, 'query', ground)
-            annotation = np.array(gt_box, dtype=float)
+            self.images = list(self.idx2sat.values())
+            self.label = list(self.idx2sat.keys())
         elif self.img_type == "query":
-            img_path = os.path.join(self.data_folder, self.data_name, 'satellite', sat)
-            annotation = np.array(click_xy, dtype=float)
+            self.images = list(self.idx2ground.values())
+            self.label = list(self.idx2ground.keys())
         else:
             raise ValueError("Invalid 'img_type' parameter. 'img_type' must be 'query' or 'reference'")
+        
 
-        # load image
-        img = cv2.imread(img_path)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
+    def __getitem__(self, index):
+        
+        if self.img_type == "reference":
+            img = cv2.imread(f'{self.data_folder}/{self.data_name}/satellite/{self.images[index]}')
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        elif self.img_type == "query":
+            img = cv2.imread(f'{self.data_folder}/{self.data_name}/query/{self.images[index]}')
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        else:
+            raise ValueError("Invalid 'img_type' parameter. 'img_type' must be 'query' or 'reference'")
+        
+        
+        # image transforms
         if self.transforms is not None:
             img = self.transforms(image=img)['image']
+            
+        label = torch.tensor(self.label[index], dtype=torch.long)
 
-        # TODO：又是这个不知道为什么的缩放
-        scale_factor = 512.0/1024.0
-        gt_box = [item * scale_factor for item in gt_box]
-
-        label = torch.tensor(idx, dtype=torch.long)
-
-        return img, label, click_xy, annotation
+        return img, label
 
     def __len__(self):
-        return len(self.data_list)
-    
-
+        return len(self.images)
 
             
 

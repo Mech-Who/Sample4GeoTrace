@@ -16,55 +16,53 @@ def evaluate(config,
              cleanup=True):
 
     print("\nExtract Features:")
-    reference_features, reference_labels = predict(
-        config, model, reference_dataloader)
+    reference_features, reference_labels = predict(config, model, reference_dataloader) 
     query_features, query_labels = predict(config, model, query_dataloader)
-
+    
     print("Compute Scores:")
-    r1 = calculate_scores(query_features, reference_features, query_labels,
-                          reference_labels, step_size=step_size, ranks=ranks)
-
+    r1 =  calculate_scores(query_features, reference_features, query_labels, reference_labels, step_size=step_size, ranks=ranks) 
+        
     # cleanup and free memory on GPU
     if cleanup:
         del reference_features, reference_labels, query_features, query_labels
         gc.collect()
-
+        
     return r1
 
 
 def calc_sim(config,
-             model,
-             reference_dataloader,
-             query_dataloader,
-             ranks=[1, 5, 10],
-             step_size=1000,
-             cleanup=True):
-
+                        model,
+                        reference_dataloader,
+                        query_dataloader, 
+                        ranks=[1, 5, 10],
+                        step_size=1000,
+                        cleanup=True):
+    
+    
     print("\nExtract Features:")
-    reference_features, reference_labels = predict(
-        config, model, reference_dataloader)
+    reference_features, reference_labels = predict(config, model, reference_dataloader) 
     query_features, query_labels = predict(config, model, query_dataloader)
-
+    
     print("Compute Scores Train:")
-    r1 = calculate_scores_train(query_features, reference_features,
-                                query_labels, reference_labels, step_size=step_size, ranks=ranks)
-
+    r1 =  calculate_scores_train(query_features, reference_features, query_labels, reference_labels, step_size=step_size, ranks=ranks) 
+    
     near_dict = calculate_nearest(query_features=query_features,
                                   reference_features=reference_features,
                                   query_labels=query_labels,
                                   reference_labels=reference_labels,
                                   neighbour_range=config.neighbour_range,
                                   step_size=step_size)
-
+            
     # cleanup and free memory on GPU
     if cleanup:
         del reference_features, reference_labels, query_features, query_labels
         gc.collect()
-
+        
     return r1, near_dict
 
 
-def calculate_scores(query_features, reference_features, query_labels, reference_labels, step_size=1000, ranks=[1, 5, 10]):
+
+def calculate_scores(query_features, reference_features, query_labels, reference_labels, step_size=1000, ranks=[1,5,10]):
 
     topk = copy.deepcopy(ranks)
     Q = len(query_features)

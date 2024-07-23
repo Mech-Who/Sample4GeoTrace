@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from torch.utils.data import DataLoader
 from sample4geo.dataset.cvogl import CVOGLDatasetEval
 from sample4geo.transforms import get_transforms_val
-from sample4geo.evaluate.cvogl import evaluate
+from sample4geo.evaluate.cvusa_and_cvact import evaluate
 from sample4geo.model import TimmModel
 
 
@@ -18,9 +18,7 @@ class Configuration:
     # Override model image size
     # img_size: int = 384
     img_size: int = 512
-    grd_size: int = 256
-    patch_size: int = 64
-
+    
     # Evaluation
     batch_size: int = 128
     verbose: bool = True
@@ -28,13 +26,12 @@ class Configuration:
     normalize_features: bool = True
     
     # Dataset
-    # data_folder = "/hong614/dataset/CVUSA"
     data_folder = "D:/Project/Reproduction/Datasets/CVOGL" 
     data_name = "CVOGL_DroneAerial"    
     
     # Checkpoint to start from
     # checkpoint_start = 'pretrained/cvusa/convnext_base.fb_in22k_ft_in1k_384/weights_e40_98.6830.pth' 
-    checkpoint_start = 'pretrained/cvogl/convnext_base.fb_in22k_ft_in1k_384/135021/weights_e30_0.0130.pth'  
+    checkpoint_start = 'cvogl/convnext_base.fb_in22k_ft_in1k_384/133414/weights_e28_13.6700.pth'  
   
     # set num_workers to 0 if on Windows
     num_workers: int = 12 if os.name == 'nt' else 4 
@@ -119,29 +116,51 @@ if __name__ == '__main__':
                                                                std=std,
                                                                )
 
-    test_dataset = CVOGLDatasetEval(data_folder=config.data_folder,
-                                    data_name=config.data_name,
-                                    split="test",
-                                    img_type="query",    
-                                    transforms=(sat_transforms_val,ground_transforms_val)
-                                    )
+
+    # Reference Satellite Images
+    reference_dataset_test = CVOGLDatasetEval(data_folder=config.data_folder ,
+                                              data_name=config.data_name,
+                                              split="test",
+                                              img_type="reference",
+                                              transforms=sat_transforms_val,
+                                              )
     
-    test_dataloader = DataLoader(test_dataset,
-                                batch_size=config.batch_size,
-                                num_workers=config.num_workers,
-                                shuffle=False,
-                                pin_memory=True)
+    reference_dataloader_test = DataLoader(reference_dataset_test,
+                                           batch_size=config.batch_size,
+                                           num_workers=config.num_workers,
+                                           shuffle=False,
+                                           pin_memory=True)
     
+    
+    
+    # Query Ground Images Test
+    query_dataset_test = CVOGLDatasetEval(data_folder=config.data_folder ,
+                                          data_name=config.data_name,
+                                          split="test",
+                                          img_type="query",    
+                                          transforms=ground_transforms_val,
+                                          )
+    
+    query_dataloader_test = DataLoader(query_dataset_test,
+                                       batch_size=config.batch_size,
+                                       num_workers=config.num_workers,
+                                       shuffle=False,
+                                       pin_memory=True)
+    
+    
+    print("Reference Images Test:", len(reference_dataset_test))
+    print("Query Images Test:", len(query_dataset_test))
 
     #-----------------------------------------------------------------------------#
     # Evaluate                                                                    #
     #-----------------------------------------------------------------------------#
     
-    print("\n{}[{}]{}".format(30*"-", "CVOGL", 30*"-"))  
+    print("\n{}[{}]{}".format(30*"-", "CVUSA", 30*"-"))  
 
     r1_test = evaluate(config=config,
-                    model=model,
-                    dataloader=test_dataloader,
-                )
-    
-    print(f"accu@0.5={r1_test[0]}, accu@0.25={r1_test[1]}")
+                       model=model,
+                       reference_dataloader=reference_dataloader_test,
+                       query_dataloader=query_dataloader_test, 
+                       ranks=[1, 5, 10],
+                       step_size=1000,
+                       cleanup=True)

@@ -14,10 +14,9 @@ from sample4geo.dataset.cvogl import CVOGLDatasetEval, CVOGLDatasetTrain
 from sample4geo.transforms import get_transforms_train, get_transforms_val
 from sample4geo.utils import setup_system, Logger
 from sample4geo.trainer import train
-from sample4geo.evaluate.cvogl import evaluate, calc_sim
-from sample4geo.loss import InfoNCE, InfoNCESimilarityLoss
+from sample4geo.evaluate.cvusa_and_cvact import evaluate, calc_sim
+from sample4geo.loss import InfoNCE
 from sample4geo.model import TimmModel
-from torchvision.transforms import Compose, ToTensor, Normalize
 
 
 @dataclass
@@ -29,28 +28,26 @@ class Configuration:
     # Override model image size
     # img_size: int = 384
     img_size: int = 512
-    grd_size: int = 256
-    patch_size: int = 64
     
     # Training 
     mixed_precision: bool = True
     seed = 42
     epochs: int = 40
-    batch_size: int = 4        # keep in mind real_batch_size = 2 * batch_size
+    batch_size: int = 32        # keep in mind real_batch_size = 2 * batch_size
     verbose: bool = True
-    gpu_ids: tuple = ()   # GPU ids for training
+    gpu_ids: tuple = (0,1)   # GPU ids for training
     
     
     # Similarity Sampling
     custom_sampling: bool = True   # use custom sampling instead of random
     gps_sample: bool = False        # use gps sampling
-    sim_sample: bool = False      # use similarity sampling
+    sim_sample: bool = True       # use similarity sampling
     neighbour_select: int = 128     # max selection size from pool
     neighbour_range: int = 64     # pool size for selection
  
     # Eval
     batch_size_eval: int = 64
-    eval_every_n_epoch: int = 1        # eval every n Epoch
+    eval_every_n_epoch: int = 4        # eval every n Epoch
     normalize_features: bool = True
 
     # Optimizer 
@@ -150,6 +147,9 @@ if __name__ == '__main__':
     elif config.data_name == "CVOGL_SVI":
         img_size_ground = (256, 512)
     
+    # new_width = config.img_size * 1.0   
+    # new_hight = round((img_size_ground[0] / img_size_ground[1]) * new_width)
+    # img_size_ground = (new_hight, new_width)
     
     # Activate gradient checkpointing
     if config.grad_checkpointing:
@@ -276,9 +276,11 @@ if __name__ == '__main__':
     # Loss                                                                        #
     #-----------------------------------------------------------------------------#
 
-    loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
-    loss_function = InfoNCESimilarityLoss(loss_function=loss_fn,
-                                           device=config.device)
+    # loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    loss_function = InfoNCE(loss_function=loss_fn,
+                            device=config.device,
+                            )
 
     if config.mixed_precision:
         scaler = GradScaler(init_scale=2.**10)
@@ -399,20 +401,35 @@ if __name__ == '__main__':
         
             r1_test = evaluate(config=config,
                                model=model,
-                               dataloader=query_dataloader_test)
+                               reference_dataloader=reference_dataloader_test,
+                               query_dataloader=query_dataloader_test, 
+                               ranks=[1, 5, 10],
+                               step_size=1000,
+                               cleanup=True)
             
-            print(f"accu@0.5={r1_test[0]}, accu@0.25={r1_test[1]}")
-            
+            if config.sim_sample:
+                r1_train, sim_dict = calc_sim(config=config,
+                                              model=model,
+                                              reference_dataloader=reference_dataloader_train,
+                                              query_dataloader=query_dataloader_train, 
+                                              ranks=[1, 5, 10],
+                                              step_size=1000,
+                                              cleanup=True)
                 
-            if r1_test[0] > best_score:
+            if r1_test > best_score:
 
-                best_score = r1_test[0]
+                best_score = r1_test
 
                 if torch.cuda.device_count() > 1 and len(config.gpu_ids) > 1:
-                    torch.save(model.module.state_dict(), '{}/weights_e{}_{:.4f}.pth'.format(model_path, epoch, r1_test[0]))
+                    torch.save(model.module.state_dict(), '{}/weights_e{}_{:.4f}.pth'.format(model_path, epoch, r1_test))
                 else:
-                    torch.save(model.state_dict(), '{}/weights_e{}_{:.4f}.pth'.format(model_path, epoch, r1_test[0]))
+                    torch.save(model.state_dict(), '{}/weights_e{}_{:.4f}.pth'.format(model_path, epoch, r1_test))
                 
+
+        if config.custom_sampling:
+            train_dataloader.dataset.shuffle(sim_dict,
+                                             neighbour_select=config.neighbour_select,
+                                             neighbour_range=config.neighbour_range)
                 
     if torch.cuda.device_count() > 1 and len(config.gpu_ids) > 1:
         torch.save(model.module.state_dict(), '{}/weights_end.pth'.format(model_path))

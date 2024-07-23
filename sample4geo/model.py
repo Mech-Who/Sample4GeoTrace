@@ -21,12 +21,9 @@ class TimmModel(nn.Module):
             self.model = timm.create_model(model_name, pretrained_cfg_overlay=pretrained_cfg_overlay, pretrained=pretrained, num_classes=0, img_size=img_size) 
         else:
             self.model = timm.create_model(model_name, pretrained_cfg_overlay=pretrained_cfg_overlay, pretrained=pretrained, num_classes=0)
-            self.model.head= nn.Sequential()
         
         self.logit_scale = torch.nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
-        # for name, module in self.model.named_modules():
-        #     print(name, module)
         
         
     def get_config(self,):
